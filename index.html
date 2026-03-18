@@ -51,10 +51,10 @@ body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;backgrou
 .client-photo-thumb{width:100%;aspect-ratio:1;border-radius:8px;object-fit:cover;border:1px solid var(--border);cursor:pointer}
 .client-photo-add{width:100%;aspect-ratio:1;border-radius:8px;border:2px dashed var(--border);display:flex;align-items:center;justify-content:center;font-size:24px;color:var(--text4);cursor:pointer;background:var(--bg)}
 .client-photo-add:active{background:var(--bg3)}
-.photo-viewer{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.9);z-index:400;display:flex;align-items:center;justify-content:center;padding:20px;flex-direction:column;gap:12px}
-.photo-viewer img{max-width:100%;max-height:80vh;border-radius:8px;object-fit:contain}
-.photo-viewer-btns{display:flex;gap:12px}
-.photo-viewer-btn{padding:10px 20px;border-radius:10px;font-size:14px;font-weight:700;border:none;cursor:pointer}
+.photo-viewer{position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,.95);z-index:400;display:flex;align-items:center;justify-content:center;padding:20px;flex-direction:column;gap:16px}
+.photo-viewer img{max-width:100%;max-height:70vh;border-radius:8px;object-fit:contain}
+.photo-viewer-btns{display:flex;gap:16px}
+.photo-viewer-btn{padding:14px 28px;border-radius:12px;font-size:16px;font-weight:700;border:none;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 .client-row{display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--border2)}.client-row:last-child{border-bottom:none}
 .job-entry{background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:12px;margin-bottom:8px;cursor:pointer;-webkit-tap-highlight-color:rgba(124,252,0,.1)}.job-entry:active{background:var(--bg3)}.job-entry.unpaid{border-left:3px solid var(--warn)}.job-entry.paid-job{border-left:3px solid var(--accent3)}.job-top{display:flex;justify-content:space-between;align-items:center}.job-date{font-size:12px;color:var(--text3)}.job-amount{font-size:16px;font-weight:700;color:var(--accent)}.job-client{font-size:15px;font-weight:600;margin:3px 0}.job-desc{font-size:12px;color:var(--text2)}.job-meta{display:flex;gap:6px;margin-top:5px;font-size:11px;color:var(--text3);flex-wrap:wrap}.job-meta span{background:rgba(124,252,0,.05);padding:2px 6px;border-radius:5px}
 .job-edit-hint{font-size:10px;color:var(--text4);text-align:center;padding:4px 0 8px}
@@ -170,54 +170,7 @@ function getPersonalRating(name){var p=clientProfiles[name];return p?p.rating:3}
 function calcClientRating(name,cd){var avgRate=0,tH=0,tR=0;jobs.forEach(function(j){tH+=j.hours_worked;tR+=j.net_revenue});avgRate=tH>0?tR/tH:25;var cRate=cd&&cd.hours>0?cd.revenue/cd.hours:avgRate;var payScore=Math.min(5,Math.max(1,1+(cRate/avgRate-0.5)*2.5));var cJobs=jobs.filter(function(j){return j.client_name===name});var wTotal=0,wSum=0;cJobs.forEach(function(j){var cat=catSvc(j.service_description);var es=ENJOY[cat]||5;var h=j.hours_worked||1;wSum+=es*h;wTotal+=h});var avgEnjoy=wTotal>0?wSum/wTotal:5;var workScore=1+(avgEnjoy-1)*(4/8);workScore=Math.min(5,Math.max(1,workScore));var personal=getPersonalRating(name);var overall=(payScore+workScore+personal)/3;return{overall:Math.round(overall*10)/10,pay:Math.round(payScore*10)/10,work:Math.round(workScore*10)/10,personal:personal}}
 async function saveProfile(name,data){try{var existing=clientProfiles[name];if(existing&&existing.id){await sb.from('clients').update({rating:data.rating||3,notes:data.notes||'',photos:data.photos||[]}).eq('id',existing.id);existing.rating=data.rating||3;existing.notes=data.notes||'';existing.photos=data.photos||[]}else{var r=await sb.from('clients').insert({name:name,rating:data.rating||3,notes:data.notes||'',photos:data.photos||[]}).select();if(r.error)throw r.error;clientProfiles[name]=r.data[0]}}catch(ex){showErr('Save profile: '+ex.message)}}
 function compressPhoto(file,cb){var reader=new FileReader();reader.onload=function(e){var img=new Image();img.onload=function(){var max=600,w=img.width,h=img.height;if(w>max||h>max){if(w>h){h=Math.round(h*max/w);w=max}else{w=Math.round(w*max/h);h=max}}var canvas=document.createElement('canvas');canvas.width=w;canvas.height=h;var ctx=canvas.getContext('2d');ctx.drawImage(img,0,0,w,h);cb(canvas.toDataURL('image/jpeg',0.6))};img.src=e.target.result};reader.readAsDataURL(file)}
-function showPhotoViewer// Find and replace the entire showPhotoViewer function with this:
-
-function showPhotoViewer(src,name,idx){
-  var ov=document.createElement('div');
-  ov.className='photo-viewer';
-  var img=document.createElement('img');
-  img.src=src;
-  ov.appendChild(img);
-  
-  var btnWrap=document.createElement('div');
-  btnWrap.className='photo-viewer-btns';
-  
-  var delBtn=document.createElement('button');
-  delBtn.className='photo-viewer-btn';
-  delBtn.style.cssText='background:var(--danger);color:#fff';
-  delBtn.textContent='Delete';
-  
-  var closeBtn=document.createElement('button');
-  closeBtn.className='photo-viewer-btn';
-  closeBtn.style.cssText='background:var(--bg2);color:var(--text)';
-  closeBtn.textContent='Close';
-  
-  btnWrap.appendChild(delBtn);
-  btnWrap.appendChild(closeBtn);
-  ov.appendChild(btnWrap);
-  document.body.appendChild(ov);
-  
-  closeBtn.addEventListener('click',function(e){
-    e.stopPropagation();
-    document.body.removeChild(ov);
-  });
-  
-  delBtn.addEventListener('click',function(e){
-    e.stopPropagation();
-    if(!confirm('Delete this photo?'))return;
-    var p=getProfile(name);
-    p.photos.splice(idx,1);
-    saveProfile(name,p);
-    document.body.removeChild(ov);
-    renderClients();
-    showToast('Photo deleted');
-  });
-  
-  ov.addEventListener('click',function(e){
-    if(e.target===ov)document.body.removeChild(ov);
-  });
-}
-}
+function showPhotoViewer(src,name,idx){var ov=document.createElement('div');ov.className='photo-viewer';var img=document.createElement('img');img.src=src;ov.appendChild(img);var btnWrap=document.createElement('div');btnWrap.className='photo-viewer-btns';var delBtn=document.createElement('button');delBtn.className='photo-viewer-btn';delBtn.style.cssText='background:#cc4444;color:#fff';delBtn.textContent='Delete Photo';var closeBtn=document.createElement('button');closeBtn.className='photo-viewer-btn';closeBtn.style.cssText='background:#1a2a1a;color:#e8f0e8';closeBtn.textContent='Close';btnWrap.appendChild(delBtn);btnWrap.appendChild(closeBtn);ov.appendChild(btnWrap);document.body.appendChild(ov);closeBtn.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();if(ov.parentNode)document.body.removeChild(ov)});delBtn.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();if(!confirm('Delete this photo?'))return;var p=getProfile(name);p.photos.splice(idx,1);saveProfile(name,p);if(ov.parentNode)document.body.removeChild(ov);renderClients();showToast('Photo deleted')});ov.addEventListener('click',function(e){if(e.target===ov&&ov.parentNode)document.body.removeChild(ov)})}
 async function loadAllData(){try{var r1=await sb.from('jobs').select('*').order('date',{ascending:true});if(r1.error)throw r1.error;jobs=r1.data.map(function(j){j.hours_worked=j.hours_worked||0;j.amount_charged=j.amount_charged||0;j.material_costs=j.material_costs||0;j.labor_costs=j.labor_costs||0;j.net_revenue=j.net_revenue||0;j.rate_per_hour=j.rate_per_hour||0;if(typeof j.paid==='undefined')j.paid=true;return j});var r2=await sb.from('tithes').select('*').order('date',{ascending:true});tithes=(r2.data||[]);var r3=await sb.from('expenses').select('*').order('date',{ascending:true});expenses=(r3.data||[]);var r4=await sb.from('quotes').select('*').order('date',{ascending:true});quotes=(r4.data||[]);var r5=await sb.from('scheduled_jobs').select('*').order('date',{ascending:true});scheduled=(r5.data||[]).map(function(s){s.estHours=s.est_hours||0;return s});var r6=await sb.from('clients').select('*');if(!r6.error&&r6.data){r6.data.forEach(function(c){clientProfiles[c.name]=c})}updateNames();document.getElementById('data-status').textContent=jobs.length+' jobs | Connected to cloud';document.getElementById('loading').style.display='none';var active=document.querySelector('.section.active');if(active){var id=active.id;if(id==='sec-jobs')renderJobs();if(id==='sec-stats'){renderStats();renderClients();renderTithe()}if(id==='sec-schedule')renderSchedule()}}catch(e){showErr('Load failed: '+e.message);document.getElementById('loading').style.display='none'}}
 async function insertJob(j){var r=await sb.from('jobs').insert({date:j.date,client_name:j.client_name,service_description:j.service_description,hours_worked:j.hours_worked,amount_charged:j.amount_charged,material_costs:j.material_costs,labor_costs:j.labor_costs,net_revenue:j.net_revenue,rate_per_hour:j.rate_per_hour,paid:j.paid}).select();if(r.error)throw r.error;return r.data[0]}
 async function updateJob(j){var r=await sb.from('jobs').update({date:j.date,client_name:j.client_name,service_description:j.service_description,hours_worked:j.hours_worked,amount_charged:j.amount_charged,material_costs:j.material_costs,labor_costs:j.labor_costs,net_revenue:j.net_revenue,rate_per_hour:j.rate_per_hour,paid:j.paid}).eq('id',j.id);if(r.error)throw r.error}

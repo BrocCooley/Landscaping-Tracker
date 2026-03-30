@@ -1,0 +1,30 @@
+{
+  "artifactId": "artifact_1774882582885_n9d1cleqnj",
+  "currentVersion": "7e62c0c108ec9f96bb220cc842ef2b20",
+  "title": "manifest.json - PWA Manifest (upload to GitHub root)",
+  "type": "artifact/code",
+  "fileExtension": "json",
+  "lastModified": "2026-03-30T14:56:26.481Z",
+  "modifiedBy": "43bf6598-1788-4992-8293-e8064125bbe9",
+  "contentHash": "8y94v4",
+  "isUpdate": false,
+  "options": {
+    "height": 300,
+    "sandbox": true,
+    "allowNetwork": false,
+    "maxWidth": 800,
+    "allowedDomains": [],
+    "expirationHours": 24
+  },
+  "versions": [
+    {
+      "hash": "08e2ac4827706acd",
+      "title": "manifest.json - PWA Manifest (upload to GitHub root)",
+      "timestamp": "2026-03-30T14:56:26.481Z",
+      "size": 568,
+      "createdBy": "43bf6598-1788-4992-8293-e8064125bbe9"
+    }
+  ],
+  "currentVersionHash": "08e2ac4827706acd",
+  "language": "json"
+}

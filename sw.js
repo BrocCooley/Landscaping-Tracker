@@ -1,45 +1,34 @@
-// Service Worker for Landscaping Tracker PWA
-var CACHE_NAME = 'landscaping-v6';
-var urlsToCache = [
-  '/',
-  '/index.html'
-];
 
-self.addEventListener('install', function(event) {
+        self.addEventListener('push', function(event) {
+  let data = { title: '🌿 Landscaping Tracker', body: 'You have a notification' };
+  try {
+  data = event.data.json();
+  } catch(e) {
+  data.body = event.data ? event.data.text() : 'New notification';
+  }
   event.waitUntil(
-    caches.open(CACHE_NAME).then(function(cache) {
-      return cache.addAll(urlsToCache);
-    })
+  self.registration.showNotification(data.title, {
+  body: data.body,
+  icon: data.icon || undefined,
+  badge: data.badge || undefined,
+  data: { url: data.url || 'https://broccooley.github.io/Landscaping-Tracker/' }
+  })
   );
-  self.skipWaiting();
 });
 
-self.addEventListener('activate', function(event) {
+self.addEventListener('notificationclick', function(event) {
+  event.notification.close();
+  var url = event.notification.data && event.notification.data.url
+  ? event.notification.data.url
+  : 'https://broccooley.github.io/Landscaping-Tracker/';
   event.waitUntil(
-    caches.keys().then(function(names) {
-      return Promise.all(
-        names.filter(function(n) { return n !== CACHE_NAME; })
-          .map(function(n) { return caches.delete(n); })
-      );
-    })
-  );
-  self.clients.claim();
-});
-
-self.addEventListener('fetch', function(event) {
-  // Network-first strategy: try network, fall back to cache
-  event.respondWith(
-    fetch(event.request).then(function(response) {
-      // Clone and cache successful responses
-      if (response && response.status === 200) {
-        var responseClone = response.clone();
-        caches.open(CACHE_NAME).then(function(cache) {
-          cache.put(event.request, responseClone);
-        });
-      }
-      return response;
-    }).catch(function() {
-      return caches.match(event.request);
-    })
+  clients.matchAll({ type: 'window' }).then(function(clientList) {
+  for (var i = 0; i < clientList.length; i++) {
+  if (clientList[i].url.indexOf('Landscaping-Tracker') !== -1 && 'focus' in clientList[i]) {
+  return clientList[i].focus();
+  }
+  }
+  return clients.openWindow(url);
+  })
   );
 });

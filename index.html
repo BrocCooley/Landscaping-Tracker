@@ -11,9 +11,6 @@
 <link rel="apple-touch-icon" href="icon-192.png">
 <title>Landscaping Tracker</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-
-        <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-
 <style>
 :root{--bg:#0f1a0f;--bg2:#1a2a1a;--bg3:#1f331f;--border:#3a5a3a;--border2:#2a3a2a;--accent:#7cfc00;--accent2:#4ac44a;--accent3:#2d8a2d;--text:#e8f0e8;--text2:#8ab88a;--text3:#6a9a6a;--text4:#4a6a4a;--warn:#cc8a2a;--danger:#cc4444;--header1:#1a3a1a;--header2:#2d5a2d}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -427,43 +424,48 @@ renderQSvcGrid();renderSavedQuotes();schedWeekStart=getMonday(new Date());
 }catch(ex){showErr('Events: '+ex.message)}
 loadAllData();
         
-        window.OneSignalDeferred = window.OneSignalDeferred || [];
-OneSignalDeferred.push(async function(OneSignal) {
-  await OneSignal.init({
-  appId: '2733b1f0-a3d2-48b0-b215-2d34437c6a4f',
-  serviceWorkerParam: { scope: '/Landscaping-Tracker/' },
-  serviceWorkerPath: 'OneSignalSDKWorker.js',
-  promptOptions: { autoPrompt: false }
-  });
-  async function saveSubscription() {
-  var subId = OneSignal.User.PushSubscription.id;
-  if (subId) {
-  try {
-  await sb.from('push_subscriptions').upsert(
-  { onesignal_player_id: subId, active: true },
-  { onConflict: 'onesignal_player_id' }
-  );
-  console.log('Push subscription saved:', subId);
-  } catch(e) { console.log('Push save error:', e); }
-  return true;
+        if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/Landscaping-Tracker/sw.js').then(function(reg) {
+  console.log('SW registered:', reg.scope);
+  if (!('PushManager' in window)) { console.log('Push not supported'); return; }
+  reg.pushManager.getSubscription().then(async function(sub) {
+  if (sub) {
+  console.log('Already subscribed');
+  var j = sub.toJSON();
+  await sb.from('push_subscriptions').upsert({
+  endpoint: j.endpoint,
+  p256dh: j.keys.p256dh,
+  auth: j.keys.auth,
+  active: true
+  }, { onConflict: 'endpoint' });
+  return;
   }
-  return false;
-  }
-  OneSignal.User.PushSubscription.addEventListener('change', function() {
-  saveSubscription();
-  });
-  if (await saveSubscription()) return;
-  if (OneSignal.Notifications.permission) return;
   var btn = document.createElement('button');
-  btn.id = 'notif-btn';
   btn.textContent = '🔔 Enable Notifications';
   btn.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;padding:10px 16px;border-radius:12px;border:none;background:linear-gradient(135deg,#1a3a5a,#2a6a9a);color:#fff;font-size:14px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,0.3);cursor:pointer';
   btn.onclick = async function() {
-  var perm = await OneSignal.Notifications.requestPermission();
-  if (perm) btn.remove();
+  try {
+  var perm = await Notification.requestPermission();
+  if (perm !== 'granted') return;
+  var newSub = await reg.pushManager.subscribe({
+  userVisibleOnly: true,
+  applicationServerKey: 'BOoLUkiP5rxKiP2lsHSS194ddD0yx5FBXj5aZJ67hKCOTQ_40PXxbiIieYo5TqJccfyOeheLPprsscxOSD1Kq8o'
+  });
+  var j = newSub.toJSON();
+  await sb.from('push_subscriptions').upsert({
+  endpoint: j.endpoint,
+  p256dh: j.keys.p256dh,
+  auth: j.keys.auth,
+  active: true
+  }, { onConflict: 'endpoint' });
+  console.log('Subscribed!', j.endpoint);
+  btn.remove();
+  } catch(e) { console.log('Subscribe error:', e); }
   };
   document.body.appendChild(btn);
-});
+  });
+  });
+}
 
 </script>
 </body>

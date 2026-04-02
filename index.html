@@ -426,17 +426,17 @@ document.getElementById('tpl-toggle').onclick=function(){var l=document.getEleme
 renderQSvcGrid();renderSavedQuotes();schedWeekStart=getMonday(new Date());
 }catch(ex){showErr('Events: '+ex.message)}
 loadAllData();
-  
+        
         window.OneSignalDeferred = window.OneSignalDeferred || [];
 OneSignalDeferred.push(async function(OneSignal) {
   await OneSignal.init({
   appId: '2733b1f0-a3d2-48b0-b215-2d34437c6a4f',
   serviceWorkerParam: { scope: '/Landscaping-Tracker/' },
-  serviceWorkerPath: 'OneSignalSDKWorker.js'
+  serviceWorkerPath: 'OneSignalSDKWorker.js',
+  promptOptions: { autoPrompt: false }
   });
+  async function saveSubscription() {
   try {
-  var permission = await OneSignal.Notifications.requestPermission();
-  if (permission) {
   var subId = OneSignal.User.PushSubscription.id;
   if (subId) {
   await sb.from('push_subscriptions').upsert(
@@ -444,9 +444,22 @@ OneSignalDeferred.push(async function(OneSignal) {
   { onConflict: 'onesignal_player_id' }
   );
   console.log('Push subscription saved:', subId);
+  document.getElementById('notif-btn').textContent = '🔔 Notifications On';
+  document.getElementById('notif-btn').disabled = true;
   }
+  } catch(e) { console.log('Push save:', e); }
   }
-  } catch(e) { console.log('Push setup:', e); }
+  if (OneSignal.Notifications.permission) { saveSubscription(); }
+  var btn = document.createElement('button');
+  btn.id = 'notif-btn';
+  btn.textContent = OneSignal.Notifications.permission ? '🔔 Notifications On' : '🔔 Enable Notifications';
+  btn.disabled = OneSignal.Notifications.permission;
+  btn.style.cssText = 'position:fixed;bottom:20px;right:20px;z-index:9999;padding:10px 16px;border-radius:12px;border:none;background:linear-gradient(135deg,#1a3a5a,#2a6a9a);color:#fff;font-size:14px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,0.3);cursor:pointer';
+  btn.onclick = async function() {
+  var perm = await OneSignal.Notifications.requestPermission();
+  if (perm) { saveSubscription(); }
+  };
+  document.body.appendChild(btn);
 });
 
 </script>

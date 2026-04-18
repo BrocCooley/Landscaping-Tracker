@@ -467,5 +467,415 @@ loadAllData();
 }
 
 </script>
+<!--
+  ============================================================
+  SMART ESTIMATE UPGRADE — Drop-in Script
+  ============================================================
+  
+  INSTALLATION:
+  Add this ENTIRE block right before </body> in your index.html,
+  AFTER your existing <script> block. That's it — no other edits.
+
+  <script> ... your existing 43K minified code ... </script>
+  ← PASTE THE SCRIPT BELOW HERE →
+  </body>
+  
+  ============================================================
+-->
+
+<script>
+(function(){
+  'use strict';
+
+  // =========================================================
+  // PART 1: INJECT LOT SIZE + SQ FT INTO LOG JOB FORM
+  // =========================================================
+
+  function injectLogJobFields(){
+    // Find the f-desc form-group and insert after it
+    var descField = document.getElementById('f-desc');
+    if(!descField) return;
+    var descGroup = descField.closest('.form-group');
+    if(!descGroup) return;
+
+    // Create lot size dropdown
+    var lotGroup = document.createElement('div');
+    lotGroup.className = 'form-group';
+    lotGroup.innerHTML =
+      '<label>Lot Size</label>' +
+      '<select id="f-lot-size" style="width:100%;padding:10px 12px;border:1px solid #333;' +
+      'border-radius:10px;background:#1a2a1a;color:#e8f0e8;font-size:15px;' +
+      '-webkit-appearance:none;appearance:none;' +
+      'background-image:url(&quot;data:image/svg+xml,%3Csvg xmlns=\'http://www.w3.org/2000/svg\' width=\'12\' height=\'12\' viewBox=\'0 0 12 12\'%3E%3Cpath fill=\'%236a9a6a\' d=\'M6 8L1 3h10z\'/%3E%3C/svg%3E&quot;);' +
+      'background-repeat:no-repeat;background-position:right 12px center">' +
+      '<option value="">— Select —</option>' +
+      '<option value="Small">Small</option>' +
+      '<option value="Medium">Medium</option>' +
+      '<option value="Large">Large</option>' +
+      '<option value="XL">XL</option>' +
+      '</select>';
+
+    // Create sq ft field
+    var sqftGroup = document.createElement('div');
+    sqftGroup.className = 'form-group';
+    sqftGroup.innerHTML =
+      '<label>Sq Ft <span style="color:var(--text3);font-weight:400">(optional)</span></label>' +
+      '<input type="number" id="f-sqft" placeholder="e.g. 5000" step="1" inputmode="numeric" ' +
+      'style="width:100%;padding:10px 12px;border:1px solid #333;border-radius:10px;' +
+      'background:#1a2a1a;color:#e8f0e8;font-size:15px;box-sizing:border-box">';
+
+    // Insert after desc group
+    var parent = descGroup.parentNode;
+    var nextSibling = descGroup.nextElementSibling;
+    parent.insertBefore(lotGroup, nextSibling);
+    parent.insertBefore(sqftGroup, lotGroup.nextElementSibling);
+  }
+
+
+  // =========================================================
+  // PART 2: OVERRIDE insertJob TO INCLUDE NEW FIELDS
+  // =========================================================
+
+  var _origInsertJob = window.insertJob;
+
+  window.insertJob = async function(j){
+    // Read our injected fields
+    var lotEl = document.getElementById('f-lot-size');
+    var sqftEl = document.getElementById('f-sqft');
+    var lotSize = lotEl ? lotEl.value : null;
+    var sqft = sqftEl ? (parseFloat(sqftEl.value) || null) : null;
+
+    // Add to the job object
+    j.lot_size = lotSize || null;
+    j.sq_ft = sqft;
+
+    // Call original insertJob
+    var result = await _origInsertJob(j);
+
+    // Reset our fields after successful save
+    if(lotEl) lotEl.value = '';
+    if(sqftEl) sqftEl.value = '';
+
+    return result;
+  };
+
+
+  // =========================================================
+  // PART 3: SMART INSIGHTS ENGINE
+  // =========================================================
+
+  // Map quote service IDs -> catSvc category names
+  var SVC_TO_CATS = {
+    'mulching':    ['Mulching'],
+    'cleanup':     ['Cleanup'],
+    'hardscaping': ['Hardscaping'],
+    'snow':        ['Snow Removal'],
+    'landscaping': ['Landscaping','Planting','Dirt/Hauling']
+  };
+
+  function getSmartInsights(serviceId, clientName){
+    if(!window.jobs || !window.catSvc) return null;
+
+    var targetCats = SVC_TO_CATS[serviceId] || [];
+    if(!targetCats.length) return null;
+
+    // Categorize all jobs
+    var categorized = jobs.map(function(j){
+      return { job:j, cat: catSvc(j.service_description) };
+    });
+
+    // TIER 1: Same service + same client
+    var tier1 = categorized.filter(function(x){
+      return targetCats.indexOf(x.cat) >= 0 &&
+             clientName &&
+             x.job.client_name &&
+             x.job.client_name.toLowerCase().trim() === clientName.toLowerCase().trim();
+    }).map(function(x){ return x.job; });
+
+    // TIER 2: Same service + same lot size (if available)
+    var lotEl = document.getElementById('f-lot-size');
+    var currentLot = lotEl ? lotEl.value : '';
+    var tier2 = categorized.filter(function(x){
+      return targetCats.indexOf(x.cat) >= 0 &&
+             currentLot &&
+             x.job.lot_size &&
+             x.job.lot_size === currentLot;
+    }).map(function(x){ return x.job; });
+
+    // TIER 3: Same service type
+    var tier3 = categorized.filter(function(x){
+      return targetCats.indexOf(x.cat) >= 0;
+    }).map(function(x){ return x.job; });
+
+    // Pick best tier
+    var matched, matchLabel;
+    if(tier1.length > 0){
+      matched = tier1;
+      matchLabel = 'Same client + service';
+    } else if(tier2.length > 0){
+      matched = tier2;
+      matchLabel = 'Same lot size + service';
+    } else if(tier3.length > 0){
+      matched = tier3;
+      matchLabel = 'Same service type';
+    } else {
+      return null;
+    }
+
+    // Compute stats
+    var n = matched.length;
+    var sum = { charged:0, hours:0, materials:0, labor:0, rate:0, net:0 };
+    var rates=[], charges=[];
+
+    matched.forEach(function(j){
+      sum.charged   += (j.amount_charged  || 0);
+      sum.hours     += (j.hours_worked    || 0);
+      sum.materials += (j.material_costs  || 0);
+      sum.labor     += (j.labor_costs     || 0);
+      sum.rate      += (j.rate_per_hour   || 0);
+      sum.net       += (j.net_revenue     || 0);
+      if(j.rate_per_hour > 0)  rates.push(j.rate_per_hour);
+      if(j.amount_charged > 0) charges.push(j.amount_charged);
+    });
+
+    var avg = {
+      charged:   +(sum.charged   / n).toFixed(2),
+      hours:     +(sum.hours     / n).toFixed(2),
+      materials: +(sum.materials / n).toFixed(2),
+      rate:      +(sum.rate      / n).toFixed(2),
+      net:       +(sum.net       / n).toFixed(2)
+    };
+
+    var minCharged = charges.length ? Math.min.apply(null, charges) : 0;
+    var maxCharged = charges.length ? Math.max.apply(null, charges) : 0;
+    var minRate    = rates.length   ? Math.min.apply(null, rates)   : 0;
+    var maxRate    = rates.length   ? Math.max.apply(null, rates)   : 0;
+
+    // Confidence
+    var confidence;
+    if(tier1.length >= 3)                          confidence = 'High';
+    else if(tier1.length >= 1 || tier2.length >= 3) confidence = 'Good';
+    else if(tier2.length >= 1 || tier3.length >= 3) confidence = 'Fair';
+    else                                            confidence = 'Low';
+
+    // Most recent match
+    var sorted = matched.slice().sort(function(a,b){
+      return (b.date||'').localeCompare(a.date||'');
+    });
+
+    return {
+      matchCount:  n,
+      matchLabel:  matchLabel,
+      confidence:  confidence,
+      avg:         avg,
+      minCharged:  minCharged,
+      maxCharged:  maxCharged,
+      minRate:     minRate,
+      maxRate:     maxRate,
+      lastJob:     sorted[0],
+      jobs:        matched
+    };
+  }
+
+
+  // =========================================================
+  // PART 4: RENDER SMART INSIGHTS PANEL
+  // =========================================================
+
+  function buildInsightsHTML(ins){
+    if(!ins) return '';
+
+    var cc = {High:'#7cfc00',Good:'#4ac44a',Fair:'#cc8a2a',Low:'#cc4444'}[ins.confidence] || '#8ab88a';
+    var h = '';
+
+    // Container
+    h += '<div id="smart-insights-panel" style="margin-top:14px;padding:14px;border-radius:12px;';
+    h += 'background:linear-gradient(135deg,rgba(26,42,26,0.95),rgba(15,26,15,0.95));';
+    h += 'border:1px solid var(--border,#3a5a3a);backdrop-filter:blur(4px)">';
+
+    // Header row
+    h += '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">';
+    h += '<div style="display:flex;align-items:center;gap:6px">';
+    h += '<span style="font-size:14px">⚡</span>';
+    h += '<span style="font-size:12px;font-weight:700;color:var(--text,#e8f0e8)">Smart Insights</span>';
+    h += '</div>';
+    h += '<span style="font-size:10px;padding:3px 10px;border-radius:6px;';
+    h += 'background:' + cc + '18;color:' + cc + ';font-weight:700;letter-spacing:0.3px">';
+    h += ins.confidence + '</span>';
+    h += '</div>';
+
+    // Match info
+    h += '<div style="font-size:11px;color:var(--text2,#8ab88a);margin-bottom:12px">';
+    h += 'Based on <strong style="color:var(--text,#e8f0e8)">' + ins.matchCount + '</strong>';
+    h += ' past job' + (ins.matchCount !== 1 ? 's' : '');
+    h += ' <span style="color:var(--text3,#6a9a6a)">·</span> ' + ins.matchLabel;
+    h += '</div>';
+
+    // Suggested price banner
+    if(ins.avg.charged > 0){
+      h += '<div style="text-align:center;padding:10px;margin-bottom:12px;border-radius:10px;';
+      h += 'background:rgba(124,252,0,0.06);border:1px dashed rgba(124,252,0,0.25)">';
+      h += '<div style="font-size:10px;color:var(--text3,#6a9a6a);margin-bottom:2px">Your typical price</div>';
+      h += '<div style="font-size:22px;font-weight:800;color:var(--accent,#7cfc00)">$' + ins.avg.charged.toFixed(0) + '</div>';
+      if(ins.matchCount > 1){
+        h += '<div style="font-size:10px;color:var(--text3,#6a9a6a);margin-top:2px">';
+        h += 'Range: $' + ins.minCharged.toFixed(0) + ' – $' + ins.maxCharged.toFixed(0) + '</div>';
+      }
+      h += '</div>';
+    }
+
+    // Stats grid — 2x2
+    h += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">';
+
+    // Avg $/Hr
+    h += '<div style="padding:10px;border-radius:10px;background:rgba(26,42,26,0.8);border:1px solid var(--border2,#2a3a2a)">';
+    h += '<div style="font-size:10px;color:var(--text3,#6a9a6a);margin-bottom:2px">Avg $/Hr</div>';
+    h += '<div style="font-size:18px;font-weight:700;color:var(--accent2,#4ac44a)">$' + ins.avg.rate.toFixed(0) + '</div>';
+    if(ins.matchCount > 1){
+      h += '<div style="font-size:9px;color:var(--text4,#4a6a4a);margin-top:1px">$' + ins.minRate.toFixed(0) + ' – $' + ins.maxRate.toFixed(0) + '</div>';
+    }
+    h += '</div>';
+
+    // Avg Hours
+    h += '<div style="padding:10px;border-radius:10px;background:rgba(26,42,26,0.8);border:1px solid var(--border2,#2a3a2a)">';
+    h += '<div style="font-size:10px;color:var(--text3,#6a9a6a);margin-bottom:2px">Avg Hours</div>';
+    h += '<div style="font-size:18px;font-weight:700;color:var(--text,#e8f0e8)">' + ins.avg.hours.toFixed(1) + '</div>';
+    h += '</div>';
+
+    // Avg Materials
+    h += '<div style="padding:10px;border-radius:10px;background:rgba(26,42,26,0.8);border:1px solid var(--border2,#2a3a2a)">';
+    h += '<div style="font-size:10px;color:var(--text3,#6a9a6a);margin-bottom:2px">Avg Materials</div>';
+    h += '<div style="font-size:18px;font-weight:700;color:var(--warn,#cc8a2a)">$' + ins.avg.materials.toFixed(0) + '</div>';
+    h += '</div>';
+
+    // Avg Net
+    h += '<div style="padding:10px;border-radius:10px;background:rgba(26,42,26,0.8);border:1px solid var(--border2,#2a3a2a)">';
+    h += '<div style="font-size:10px;color:var(--text3,#6a9a6a);margin-bottom:2px">Avg Net Profit</div>';
+    h += '<div style="font-size:18px;font-weight:700;color:var(--accent,#7cfc00)">$' + ins.avg.net.toFixed(0) + '</div>';
+    h += '</div>';
+
+    h += '</div>'; // close grid
+
+    // Last job reference
+    if(ins.lastJob){
+      h += '<div style="font-size:10px;color:var(--text3,#6a9a6a);padding-top:8px;border-top:1px solid var(--border2,#2a3a2a);line-height:1.5">';
+      h += '📋 Last: <span style="color:var(--text2,#8ab88a);font-weight:600">';
+      h += (ins.lastJob.client_name || 'Unknown') + '</span>';
+      h += ' on ' + (ins.lastJob.date || '?');
+      h += ' — <span style="color:var(--text,#e8f0e8)">$' + (ins.lastJob.amount_charged||0).toFixed(0) + '</span>';
+      h += ' / ' + (ins.lastJob.hours_worked||0) + 'h';
+      h += ' = <span style="color:var(--accent2,#4ac44a)">$' + (ins.lastJob.rate_per_hour||0).toFixed(0) + '/hr</span>';
+      if(ins.lastJob.lot_size){
+        h += ' · Lot: ' + ins.lastJob.lot_size;
+      }
+      h += '</div>';
+    }
+
+    h += '</div>'; // close container
+    return h;
+  }
+
+
+  // =========================================================
+  // PART 5: OBSERVE QUOTE RESULTS & INJECT INSIGHTS
+  // =========================================================
+
+  function attachQuoteObserver(){
+    var resultArea = document.getElementById('q-result-area');
+    if(!resultArea) return;
+
+    var observer = new MutationObserver(function(){
+      // Don't re-inject if we already added our panel
+      if(document.getElementById('smart-insights-panel')) return;
+
+      // Check if a quote result was rendered (has q-result class)
+      var quoteResult = resultArea.querySelector('.q-result');
+      if(!quoteResult) return;
+
+      // Get current service and client
+      var svc = window.qSelectedSvc || '';
+      var client = '';
+      if(window.qMode === 'quick'){
+        var el = document.getElementById('q-client');
+        if(el) client = el.value.trim();
+      } else {
+        var el2 = document.getElementById('q-client-d');
+        if(el2) client = el2.value.trim();
+      }
+
+      // Generate insights
+      var insights = getSmartInsights(svc, client);
+      if(!insights) return;
+
+      // Append to result area
+      var wrapper = document.createElement('div');
+      wrapper.innerHTML = buildInsightsHTML(insights);
+      while(wrapper.firstChild){
+        resultArea.appendChild(wrapper.firstChild);
+      }
+    });
+
+    observer.observe(resultArea, { childList:true, subtree:false });
+  }
+
+
+  // =========================================================
+  // PART 6: AUTO-SUGGEST RATE ON SERVICE SELECTION
+  // =========================================================
+
+  function attachRateAutoFill(){
+    var grid = document.getElementById('q-svc-grid');
+    if(!grid) return;
+
+    grid.addEventListener('click', function(){
+      // Small delay to let the original handler set qSelectedSvc
+      setTimeout(function(){
+        var svc = window.qSelectedSvc;
+        if(!svc) return;
+
+        var insights = getSmartInsights(svc, '');
+        if(!insights || !insights.avg.rate) return;
+
+        // Show a subtle hint — don't override if user already typed
+        var rateField = (window.qMode === 'quick')
+          ? document.getElementById('q-rate')
+          : document.getElementById('q-rate-d');
+
+        if(rateField && (!rateField.value || rateField.value === '0')){
+          rateField.value = insights.avg.rate.toFixed(0);
+          rateField.style.borderColor = 'var(--accent2,#4ac44a)';
+          rateField.style.transition = 'border-color 0.3s';
+          // Reset border after 2s
+          setTimeout(function(){
+            rateField.style.borderColor = '';
+          }, 2000);
+        }
+      }, 50);
+    });
+  }
+
+
+  // =========================================================
+  // INIT — Wait for DOM + existing script to finish
+  // =========================================================
+
+  function init(){
+    injectLogJobFields();
+    attachQuoteObserver();
+    attachRateAutoFill();
+    console.log('[Smart Estimate] Loaded — lot_size, sq_ft fields injected, quote insights active');
+  }
+
+  // The existing script runs synchronously at bottom of body,
+  // so by the time this script runs, everything is already set up.
+  if(document.readyState === 'loading'){
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+
+})();
+</script>
+
 </body>
 </html>
